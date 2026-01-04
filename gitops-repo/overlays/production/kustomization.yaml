@@ -9,32 +9,31 @@ namespace: gitops-demo-prod
 namePrefix: prod-
 
 labels:
-  - includeSelectors: false
-    pairs:
-      environment: production
-      tier: production
+- pairs:
+    environment: production
+    tier: production
 
 resources:
-  - ../../base
-  - namespace.yaml
-  - pdb.yaml
+- ../../base
+- namespace.yaml
+- pdb.yaml
 
 patches:
-  - path: patch-deployment.yaml
-    target:
-      kind: Deployment
-      name: backend-service
+- path: patch-deployment.yaml
+  target:
+    kind: Deployment
+    name: backend-service
 
 configMapGenerator:
-  - name: backend-service-config
-    behavior: replace
-    literals:
-      - PORT=8080
-      - SERVICE_NAME=backend-service
-      - ENVIRONMENT=production
-      - LOG_LEVEL=warn
+- behavior: replace
+  literals:
+  - PORT=8080
+  - SERVICE_NAME=backend-service
+  - ENVIRONMENT=production
+  - LOG_LEVEL=warn
+  name: backend-service-config
 
 images:
-  - name: ghcr.io/anasadan/gitops-demo
-    newTag: latest
-
+- name: ghcr.io/anasadan/gitops-demo
+  newName: ghcr.io/anasadan/gitops-demo
+  newTag: 1.0.1
