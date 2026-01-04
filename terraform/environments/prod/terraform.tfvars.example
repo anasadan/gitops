@@ -1,0 +1,23 @@
+# =============================================================================
+# Production Environment Variables
+# =============================================================================
+# 
+# Copy this file to terraform.tfvars and update with your values:
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# =============================================================================
+
+# AWS Region
+aws_region = "us-east-1"
+
+# SSH Key pair name (create in AWS Console first)
+# Leave empty to disable SSH access
+ssh_key_name = "my-ssh-key"
+
+# Your IP for SSH access (get it from: curl ifconfig.me)
+# Format: "YOUR_IP/32"
+my_ip = "1.2.3.4/32"
+
+# Docker image tag to deploy
+docker_image_tag = "v1.0.1"
+
