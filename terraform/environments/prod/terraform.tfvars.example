@@ -1,23 +1,25 @@
 # =============================================================================
-# Production Environment Variables
+# Production Environment - FREE TIER Configuration
 # =============================================================================
 # 
-# Copy this file to terraform.tfvars and update with your values:
-#   cp terraform.tfvars.example terraform.tfvars
+# Copy this file: cp terraform.tfvars.example terraform.tfvars
+# Then edit with your values
 #
 # =============================================================================
 
-# AWS Region
+# AWS Region (us-east-1 has best free tier availability)
 aws_region = "us-east-1"
 
-# SSH Key pair name (create in AWS Console first)
-# Leave empty to disable SSH access
-ssh_key_name = "my-ssh-key"
+# SSH Key pair name
+# Create one in AWS Console: EC2 → Key Pairs → Create
+# Leave empty to disable SSH
+ssh_key_name = ""
 
-# Your IP for SSH access (get it from: curl ifconfig.me)
-# Format: "YOUR_IP/32"
-my_ip = "1.2.3.4/32"
+# Your IP for SSH access
+# Get your IP: curl ifconfig.me
+# Format: "YOUR_IP/32" for single IP
+# Use "0.0.0.0/0" to allow all (not recommended)
+my_ip = "0.0.0.0/0"
 
 # Docker image tag to deploy
 docker_image_tag = "v1.0.1"
-

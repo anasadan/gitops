@@ -1,8 +1,14 @@
 # =============================================================================
-# Production Environment - EC2 Deployment
+# Production Environment - EC2 Deployment (FREE TIER)
 # =============================================================================
 # 
-# Deploy your GitOps Demo app to AWS EC2
+# Deploys GitOps Demo app to AWS EC2 - FREE TIER ELIGIBLE
+# Cost: $0/month (within free tier limits)
+#
+# Free Tier includes:
+#   - 750 hours t2.micro/month (first 12 months)
+#   - 30GB EBS storage
+#   - 15GB data transfer out
 #
 # Usage:
 #   cd terraform/environments/prod
@@ -21,15 +27,6 @@ terraform {
       version = "~> 5.0"
     }
   }
-
-  # Uncomment to use S3 backend for state
-  # backend "s3" {
-  #   bucket         = "your-terraform-state-bucket"
-  #   key            = "gitops-demo/prod/terraform.tfstate"
-  #   region         = "us-east-1"
-  #   encrypt        = true
-  #   dynamodb_table = "terraform-state-lock"
-  # }
 }
 
 provider "aws" {
@@ -40,7 +37,6 @@ provider "aws" {
       Project     = "gitops-demo"
       Environment = "prod"
       ManagedBy   = "terraform"
-      Repository  = "github.com/anasadan/gitops"
     }
   }
 }
@@ -50,57 +46,153 @@ provider "aws" {
 # -----------------------------------------------------------------------------
 
 variable "aws_region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-east-1"
+  default = "us-east-1"
 }
 
 variable "ssh_key_name" {
-  description = "Name of existing SSH key pair (leave empty to skip)"
-  type        = string
+  description = "SSH key pair name (create in AWS Console first)"
   default     = ""
 }
 
 variable "my_ip" {
-  description = "Your IP address for SSH access (e.g., 1.2.3.4/32)"
-  type        = string
-  default     = "0.0.0.0/0"  # Restrict this!
+  description = "Your IP for SSH (run: curl ifconfig.me)"
+  default     = "0.0.0.0/0"
 }
 
 variable "docker_image_tag" {
-  description = "Docker image tag to deploy"
-  type        = string
-  default     = "v1.0.1"
+  default = "v1.0.1"
 }
 
 # -----------------------------------------------------------------------------
-# Deploy Application
+# Data Sources
 # -----------------------------------------------------------------------------
 
-module "app" {
-  source = "../../modules/ec2-app"
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["amazon"]
 
-  app_name     = "gitops-demo"
-  environment  = "prod"
-  aws_region   = var.aws_region
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
+}
 
-  # Instance configuration
-  instance_type  = "t3.small"      # Upgrade for production
-  instance_count = 2               # 2 instances for HA
+# -----------------------------------------------------------------------------
+# VPC (Use Default VPC - FREE)
+# -----------------------------------------------------------------------------
 
-  # Docker image from GHCR
-  docker_image = "ghcr.io/anasadan/gitops-demo:${var.docker_image_tag}"
-  app_port     = 8080
+data "aws_vpc" "default" {
+  default = true
+}
 
-  # SSH access (optional)
-  ssh_key_name     = var.ssh_key_name
-  allowed_ssh_cidr = var.my_ip
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+}
 
-  # Networking
-  vpc_cidr = "10.0.0.0/16"
+# -----------------------------------------------------------------------------
+# Security Group
+# -----------------------------------------------------------------------------
+
+resource "aws_security_group" "app" {
+  name        = "gitops-demo-sg"
+  description = "GitOps Demo app security group"
+  vpc_id      = data.aws_vpc.default.id
+
+  # HTTP access
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # App port (8080)
+  ingress {
+    description = "App port"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # SSH access (restrict to your IP!)
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.my_ip]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
   tags = {
-    Owner = "anasadan"
+    Name = "gitops-demo-sg"
+  }
+}
+
+# -----------------------------------------------------------------------------
+# EC2 Instance (t2.micro - FREE TIER)
+# -----------------------------------------------------------------------------
+
+resource "aws_instance" "app" {
+  ami                         = data.aws_ami.amazon_linux.id
+  instance_type               = "t2.micro"  # FREE TIER!
+  subnet_id                   = data.aws_subnets.default.ids[0]
+  vpc_security_group_ids      = [aws_security_group.app.id]
+  associate_public_ip_address = true
+  key_name                    = var.ssh_key_name != "" ? var.ssh_key_name : null
+
+  # 8GB root volume (FREE: up to 30GB)
+  root_block_device {
+    volume_type           = "gp2"
+    volume_size           = 8
+    delete_on_termination = true
+  }
+
+  user_data = <<-EOF
+    #!/bin/bash
+    set -e
+    
+    # Log output
+    exec > >(tee /var/log/user-data.log) 2>&1
+    
+    echo "=== Starting deployment ==="
+    
+    # Update and install Docker
+    yum update -y
+    amazon-linux-extras install docker -y
+    systemctl start docker
+    systemctl enable docker
+    usermod -a -G docker ec2-user
+    
+    # Pull and run the app
+    docker pull ghcr.io/anasadan/gitops-demo:${var.docker_image_tag}
+    
+    # Run on port 80 (no need for ALB!)
+    docker run -d \
+      --name gitops-demo \
+      --restart always \
+      -p 80:8080 \
+      -e ENVIRONMENT=production \
+      -e SERVICE_NAME=gitops-demo \
+      ghcr.io/anasadan/gitops-demo:${var.docker_image_tag}
+    
+    echo "=== Deployment complete ==="
+    echo "App running on port 80"
+  EOF
+
+  tags = {
+    Name = "gitops-demo-prod"
   }
 }
 
@@ -108,28 +200,34 @@ module "app" {
 # Outputs
 # -----------------------------------------------------------------------------
 
+output "instance_id" {
+  value = aws_instance.app.id
+}
+
+output "public_ip" {
+  value = aws_instance.app.public_ip
+}
+
+output "public_dns" {
+  value = aws_instance.app.public_dns
+}
+
 output "app_url" {
-  description = "URL to access the application"
-  value       = module.app.alb_url
+  value = "http://${aws_instance.app.public_ip}"
 }
 
-output "alb_dns" {
-  description = "ALB DNS name"
-  value       = module.app.alb_dns_name
-}
-
-output "instance_ips" {
-  description = "EC2 instance public IPs"
-  value       = module.app.instance_public_ips
-}
-
-output "health_check_url" {
-  description = "Health check endpoint"
-  value       = "${module.app.alb_url}/health"
+output "health_url" {
+  value = "http://${aws_instance.app.public_ip}/health"
 }
 
 output "version_url" {
-  description = "Version endpoint"
-  value       = "${module.app.alb_url}/version"
+  value = "http://${aws_instance.app.public_ip}/version"
 }
 
+output "ssh_command" {
+  value = var.ssh_key_name != "" ? "ssh -i ~/.ssh/${var.ssh_key_name}.pem ec2-user@${aws_instance.app.public_ip}" : "SSH key not configured"
+}
+
+output "estimated_cost" {
+  value = "FREE (within AWS Free Tier limits)"
+}
