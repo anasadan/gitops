@@ -69,12 +69,12 @@ func main() {
 			http.NotFound(w, r)
 			return
 		}
-		infoHandler(w, r, serviceName, environment)
+		infoHandler(w, serviceName, environment)
 	})
 
 	// API endpoints
 	mux.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
-		infoHandler(w, r, serviceName, environment)
+		infoHandler(w, serviceName, environment)
 	})
 
 	server := &http.Server{
@@ -93,51 +93,61 @@ func main() {
 	}
 }
 
-func healthHandler(w http.ResponseWriter, r *http.Request) {
+func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(HealthResponse{
+	if err := json.NewEncoder(w).Encode(HealthResponse{
 		Status:    "healthy",
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
-	})
-}
-
-func readinessHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if atomic.LoadInt32(&ready) == 1 {
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(HealthResponse{
-			Status:    "ready",
-			Timestamp: time.Now().UTC().Format(time.RFC3339),
-		})
-	} else {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(HealthResponse{
-			Status:    "not_ready",
-			Timestamp: time.Now().UTC().Format(time.RFC3339),
-		})
+	}); err != nil {
+		log.Printf("Error encoding health response: %v", err)
 	}
 }
 
-func versionHandler(w http.ResponseWriter, r *http.Request) {
+func readinessHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(VersionResponse{
+	if atomic.LoadInt32(&ready) == 1 {
+		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(HealthResponse{
+			Status:    "ready",
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+		}); err != nil {
+			log.Printf("Error encoding readiness response: %v", err)
+		}
+	} else {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		if err := json.NewEncoder(w).Encode(HealthResponse{
+			Status:    "not_ready",
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+		}); err != nil {
+			log.Printf("Error encoding readiness response: %v", err)
+		}
+	}
+}
+
+func versionHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(VersionResponse{
 		Version:   Version,
 		BuildTime: BuildTime,
 		GitCommit: GitCommit,
 		GoVersion: "1.21",
-	})
+	}); err != nil {
+		log.Printf("Error encoding version response: %v", err)
+	}
 }
 
-func infoHandler(w http.ResponseWriter, r *http.Request, serviceName, environment string) {
+func infoHandler(w http.ResponseWriter, serviceName, environment string) {
 	hostname, _ := os.Hostname()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(InfoResponse{
+	if err := json.NewEncoder(w).Encode(InfoResponse{
 		Service:     serviceName,
 		Environment: environment,
 		Hostname:    hostname,
 		Message:     "Welcome to the GitOps Demo API",
-	})
+	}); err != nil {
+		log.Printf("Error encoding info response: %v", err)
+	}
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {
@@ -154,4 +164,3 @@ func getEnv(key, defaultValue string) string {
 	}
 	return defaultValue
 }
-
