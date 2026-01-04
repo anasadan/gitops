@@ -18,6 +18,10 @@ on:
 env:
   GO_VERSION: '1.21'
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   lint:
     name: Lint
