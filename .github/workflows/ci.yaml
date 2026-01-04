@@ -1,0 +1,184 @@
+name: CI - Build & Test
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'app-src/**'
+      - '.github/workflows/ci.yaml'
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'app-src/**'
+
+env:
+  GO_VERSION: '1.21'
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: app-src/backend-service/go.sum
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          working-directory: app-src/backend-service
+          args: --timeout=5m
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: app-src/backend-service/go.sum
+
+      - name: Run tests
+        working-directory: app-src/backend-service
+        run: |
+          go test -v -race -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: app-src/backend-service/coverage.out
+          flags: backend-service
+          fail_ci_if_error: false
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: app-src/backend-service/go.sum
+
+      - name: Build binary
+        working-directory: app-src/backend-service
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+            -ldflags="-w -s -X main.Version=${{ github.sha }} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X main.GitCommit=${{ github.sha }}" \
+            -o backend-service .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-service-binary
+          path: app-src/backend-service/backend-service
+          retention-days: 1
+
+  docker-build:
+    name: Docker Build (Test)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: app-src/backend-service
+          file: app-src/backend-service/Dockerfile
+          push: false
+          tags: gitops-demo:test
+          build-args: |
+            VERSION=${{ github.sha }}
+            BUILD_TIME=${{ github.event.head_commit.timestamp }}
+            GIT_COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  validate-manifests:
+    name: Validate K8s Manifests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Validate base manifests
+        run: |
+          kustomize build gitops-repo/base > /dev/null
+          echo "Base manifests are valid"
+
+      - name: Validate dev overlay
+        run: |
+          kustomize build gitops-repo/overlays/dev > /dev/null
+          echo "Dev overlay is valid"
+
+      - name: Validate staging overlay
+        run: |
+          kustomize build gitops-repo/overlays/staging > /dev/null
+          echo "Staging overlay is valid"
+
+      - name: Validate production overlay
+        run: |
+          kustomize build gitops-repo/overlays/production > /dev/null
+          echo "Production overlay is valid"
+
+      - name: Install kubeval
+        run: |
+          wget https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz
+          tar xf kubeval-linux-amd64.tar.gz
+          sudo mv kubeval /usr/local/bin/
+
+      - name: Validate with kubeval
+        run: |
+          kustomize build gitops-repo/overlays/dev | kubeval --strict --ignore-missing-schemas
+          kustomize build gitops-repo/overlays/staging | kubeval --strict --ignore-missing-schemas
+          kustomize build gitops-repo/overlays/production | kubeval --strict --ignore-missing-schemas
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: docker-build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: 'app-src/backend-service'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+

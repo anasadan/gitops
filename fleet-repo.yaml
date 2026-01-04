@@ -1,0 +1,26 @@
+apiVersion: fleet.cattle.io/v1alpha1
+kind: GitRepo
+metadata:
+  name: gitops-demo
+  namespace: fleet-default
+spec:
+  # Update this URL after pushing to GitHub
+  repo: https://github.com/anasadan/gitops.git
+  branch: main
+  paths:
+    - gitops-repo/overlays/dev
+    - gitops-repo/overlays/staging
+    - gitops-repo/overlays/production
+  targets:
+    - name: dev
+      clusterSelector:
+        matchLabels:
+          env: dev
+    - name: staging
+      clusterSelector:
+        matchLabels:
+          env: staging
+    - name: production
+      clusterSelector:
+        matchLabels:
+          env: production

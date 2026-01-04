@@ -1,0 +1,92 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: gitops-demo
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: GitOps Demo Project - Multi-environment deployment
+
+  # Source repositories
+  sourceRepos:
+    - 'https://github.com/anasadan/gitops.git'
+    - 'https://github.com/anasadan/gitops-demo.git'
+
+  # Destination clusters and namespaces
+  destinations:
+    # Dev environment
+    - namespace: gitops-demo-dev
+      server: https://kubernetes.default.svc
+      name: in-cluster
+    # Staging environment
+    - namespace: gitops-demo-staging
+      server: https://kubernetes.default.svc
+      name: in-cluster
+    # Production environment
+    - namespace: gitops-demo-prod
+      server: https://kubernetes.default.svc
+      name: in-cluster
+
+  # Cluster resource allow list
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+
+  # Namespace resource allow list
+  namespaceResourceWhitelist:
+    - group: ''
+      kind: ConfigMap
+    - group: ''
+      kind: Secret
+    - group: ''
+      kind: Service
+    - group: ''
+      kind: ServiceAccount
+    - group: apps
+      kind: Deployment
+    - group: apps
+      kind: StatefulSet
+    - group: apps
+      kind: ReplicaSet
+    - group: networking.k8s.io
+      kind: Ingress
+    - group: policy
+      kind: PodDisruptionBudget
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+
+  # Roles for the project
+  roles:
+    - name: developer
+      description: Developer role with read-only access
+      policies:
+        - p, proj:gitops-demo:developer, applications, get, gitops-demo/*, allow
+        - p, proj:gitops-demo:developer, applications, sync, gitops-demo/dev-*, allow
+      groups:
+        - developers
+
+    - name: devops
+      description: DevOps role with full access
+      policies:
+        - p, proj:gitops-demo:devops, applications, *, gitops-demo/*, allow
+      groups:
+        - devops
+
+  # Sync windows (optional - for production deployments)
+  syncWindows:
+    - kind: allow
+      schedule: '* * * * *'
+      duration: 24h
+      applications:
+        - 'dev-*'
+        - 'staging-*'
+      manualSync: true
+    - kind: allow
+      schedule: '0 9-17 * * 1-5'
+      duration: 8h
+      applications:
+        - 'prod-*'
+      manualSync: true
+      timeZone: 'America/New_York'
+

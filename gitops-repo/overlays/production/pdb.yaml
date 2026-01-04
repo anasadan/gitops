@@ -1,0 +1,14 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-service-pdb
+  labels:
+    app.kubernetes.io/name: backend-service
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: gitops-demo
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend-service
+

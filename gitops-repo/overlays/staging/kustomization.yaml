@@ -1,0 +1,39 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: backend-service-staging
+
+namespace: gitops-demo-staging
+
+namePrefix: staging-
+
+labels:
+  - includeSelectors: false
+    pairs:
+      environment: staging
+      tier: staging
+
+resources:
+  - ../../base
+  - namespace.yaml
+
+patches:
+  - path: patch-deployment.yaml
+    target:
+      kind: Deployment
+      name: backend-service
+
+configMapGenerator:
+  - name: backend-service-config
+    behavior: replace
+    literals:
+      - PORT=8080
+      - SERVICE_NAME=backend-service
+      - ENVIRONMENT=staging
+      - LOG_LEVEL=info
+
+images:
+  - name: ghcr.io/anasadan/gitops-demo
+    newTag: latest
+

@@ -1,0 +1,17 @@
+# Default owners for everything
+* @anasadan
+
+# Application code
+/app-src/ @anasadan
+
+# Infrastructure and GitOps
+/gitops-repo/ @anasadan
+/argocd/ @anasadan
+/terraform/ @anasadan
+
+# CI/CD
+/.github/ @anasadan
+
+# Kubernetes manifests require review
+/gitops-repo/overlays/production/ @anasadan
+

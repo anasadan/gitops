@@ -1,0 +1,52 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prod-backend-service
+  namespace: argocd
+  labels:
+    environment: production
+    app.kubernetes.io/name: backend-service
+    app.kubernetes.io/part-of: gitops-demo
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: gitops-demo
+
+  source:
+    repoURL: https://github.com/anasadan/gitops.git
+    targetRevision: HEAD
+    path: gitops-repo/overlays/production
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: gitops-demo-prod
+
+  # Production uses manual sync for safety
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - Validate=true
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  revisionHistoryLimit: 10
+
+  info:
+    - name: 'Environment'
+      value: 'Production'
+    - name: 'Team'
+      value: 'Platform Engineering'
+    - name: 'On-Call'
+      value: 'platform-oncall@company.com'
+
